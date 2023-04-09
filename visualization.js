@@ -84,6 +84,16 @@ function get2DCoordinates(classification) {
   return { x, y };
 }
 
+function get3DCoordinates(classification) {
+  const number = parseFloat(classification.classification); // Convert the classification string to a float
+  const x = ((Math.floor(number) / 10) * 100) % width; // Calculate the x coordinate
+  const y = ((number - Math.floor(number)) * 10) * 40; // Calculate the y coordinate
+  const z = 100 * Math.sin(number); // Calculate the z coordinate. Modify this line to match your desired Z positioning.
+
+  return { x, y, z };
+}
+
+
 function updateClassifications(primary, secondary) {
   primaryClassification = {
     classification: primary,
