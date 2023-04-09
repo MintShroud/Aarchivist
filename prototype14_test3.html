@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arkivist Prototype</title>
+    <script src="https://unpkg.com/html-to-text-browser@1.0.1"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.min.js"></script>
+    <script src="visualization.js"></script>
+    <style>
+        body, p, h1, input, button {
+            margin: 0;
+            padding: 0;
+            border: 0;
+            font-size: 100%;
+            font: inherit;
+            vertical-align: baseline;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #000;
+            color: #ff7f00;
+            overflow-x: hidden;
+        }
+
+        .container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            padding: 0 20px;
+        }
+
+        .box {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 500px;
+            background-color: #000;
+            padding: 20px 40px; /* Increase padding on the left and right sides */
+            border-right: 1px solid #ff7f00;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+
+        h1 {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+
+        input, button {
+            color: #ff7f00;
+        }
+
+        #input-box, #submit-button {
+            background-color: #000;
+            color: #ff7f00;
+            border: 2px solid #ff7f00;
+        }
+
+        #submit-button:hover {
+            background-color: #ff7f00;
+            color: #000;}
+
+        #output-container {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background-color: #333;
+            position: relative;
+            overflow: hidden;
+            border-radius: 2px;
+        }
+
+        .progress-bar-inner {
+            position: absolute;
+            height: 100%;
+            width: 30%;
+            left: -30%;
+            background-color: #ff7f00;
+            animation: progress 2s linear infinite;
+        }
+
+        @keyframes progress {
+            0% { left: -30%; }
+            100% { left: 100%; }
+        }
+
+        .main-container {
+            position: absolute;
+            top: 0;
+            left: 501px;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-sizing: border-box;
+        }
+        
+        .visualization-container {
+            flex-grow: 1;
+            width: 600px;
+            height: 600px;
+            box-sizing: border-box;
+        }
+
+
+    </style>
+</head>
+<body>
+        <div class="box">
+        <h1>Arkivist Prototype</h1>
+        <input type="text" id="input-box" placeholder="Enter URL or text..." style="width: 100%;">
+        <button id="submit-button" style="width: 100%; margin-top: 10px;">Submit</button>
+        <div id="loader-container" style="display: none; margin-top: 20px;">
+            <div class="progress-bar">
+                <div class="progress-bar-inner"></div>
+            </div>
+        </div>
+        <div id="output-container" style="margin-top: 20px;"></div>
+    </div>
+    <div class="main-container">
+        <div class="visualization-container" id="visualization-container">
+            <div class="text-container" id="text-container"></div>
+        </div>
+    </div>
+
+    <script>
+        const OPENAI_API_KEY = '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';
+
+        async function extractTextFromUrl(url) {
+    try {
+        const corsProxy = 'https://api.allorigins.win/raw?url=';
+        const response = await axios.get(corsProxy + url);
+        const html = response.data;
+
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+
+        // Remove script, style, and noscript tags
+        Array.from(doc.querySelectorAll('script, style, noscript')).forEach(el => el.remove());
+
+        // Check if the URL is a YouTube video
+        const isYoutubeVideo = url.includes('youtube.com/watch') || url.includes('youtu.be/');
+        if (isYoutubeVideo) {
+            const titleElement = doc.querySelector('meta[name="title"], meta[property="og:title"]');
+            const descriptionElement = doc.querySelector('meta[name="description"], meta[property="og:description"]');
+            const tagsElement = doc.querySelector('meta[name="keywords"]');
+
+            if (titleElement && descriptionElement && tagsElement) {
+                const title = titleElement.content;
+                const description = descriptionElement.content;
+                const tags = tagsElement.content;
+
+                return `${title}\n\n${description}\n\nTags: ${tags}`;
+            }
+        }
+
+        const textContent = doc.body.textContent || doc.body.innerText;
+        const extractedText = textContent.trim().replace(/\s+/g, ' ');
+
+        return extractedText;
+    } catch (error) {
+        console.error('Error extracting text from the URL:', error);
+        return 'Error extracting text from the URL.';
+    }
+}
+
+
+        function callGPT3API(prompt) {
+            return axios.post('https://api.openai.com/v1/engines/text-davinci-003/completions', {
+                prompt: prompt,
+                max_tokens: 500,
+                n: 1,
+                stop: null,
+                temperature: 0.3
+            }, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + OPENAI_API_KEY
+                }
+            });
+        }
+
+        document.getElementById('submit-button').addEventListener('click', async function() {
+            const inputBox = document.getElementById('input-box');
+            const outputContainer = document.getElementById('output-container');
+            const loaderContainer = document.getElementById('loader-container');
+
+            outputContainer.innerHTML = '';
+
+            let extractedText = await extractTextFromUrl(inputBox.value);
+extractedText = extractedText.slice(0, 1000); // Truncate the text to 1000 characters
+            console.log('Extracted text:', extractedText);
+            const prompt = `As an AI Archivist, please evaluate the following URL or text and classify it according to the Dewey Decimal Classification system, providing primary and at least 5 secondary classifications based on the content, as well as some tags for easy searching. Focus specifically on the extracted text provided.
+
+Extracted Text: ${extractedText}
+
+Please format your response in the following way:
+
+1. Evaluation (a brief summary of the resource's content, its significance, and whether it is worth archiving)
+2. Primary Classification (a single primary classification)
+3. Secondary Classifications (at least 5 secondary classifications)
+4. Tags (relevant tags for easy searching)
+5. Serial Number (based on the classifications)
+
+Example:
+URL or text: <https://www.behance.net/>
+
+Example Evaluation:
+This resource is a link to the Behance website, which is a platform for showcasing and discovering creative work across various fields, such as graphic design, illustration, photography, and more. The website serves as an extensive database of creative portfolios and projects, making it a valuable resource for artistic research and inspiration. Given the significance of the platform and the potential for education and research in the creative arts, this resource is worth archiving.
+
+Example Classification:
+The primary Dewey Decimal Classification for this resource is:
+
+- 700 Arts
+
+However, there may be additional secondary catalogs depending on the content of the media, such as:
+
+- 741.6 Graphic design
+- 770 Photography
+- 740 Drawing and decorative arts
+- 760 Printmaking and prints
+- 020.285 Digital libraries and archives
+
+Example Tags:
+- Design
+- Art
+- Photography
+- Illustration
+
+Based on the above classifications, the serial number for this material is 700-741.6-770-740-760-020.285.
+`;
+
+
+
+                        loaderContainer.style.display = 'flex';
+
+            try {
+                const response = await callGPT3API(prompt);
+                const classificationResult = response.data.choices[0].text.trim();
+
+                const resultLines = classificationResult.split('\n');
+                resultLines.forEach(line => {
+                    const p = document.createElement('p');
+                    p.innerHTML = '<strong>' + line.substring(0, line.indexOf(':') + 1) + '</strong>' + line.substring(line.indexOf(':') + 1);
+                    outputContainer.appendChild(p);
+                });
+                // Extract the serial numbers from the classification result
+// Extract the serial numbers from the classification result
+const serialNumberRegex = /(\d+(?:\.\d+)?)/g;
+const serialNumbers = classificationResult.match(serialNumberRegex).map(Number);
+
+// Update the visualization with the new serial numbers
+const primary = serialNumbers.shift(); // Remove the first element (primary classification)
+updateClassifications(primary, serialNumbers);
+
+
+            } catch (error) {
+                console.error('Error calling GPT-3 API:', error);
+                outputContainer.innerHTML = '<p><strong>Error:</strong> There was an error processing your request.</p>';
+            } finally {
+                loaderContainer.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>
